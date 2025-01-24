@@ -6,7 +6,7 @@ from typing import Any, \
                    List, \
                    Optional
 
-from sampling.edm_sampler import edm_sampler
+from sampling.edm_sampler import edm_sampler, edm_sampler_compress
 
 
 # Copyright (c) 2022, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
@@ -86,6 +86,64 @@ def denoise_latents(cond_net: Any,
                                                   class_labels=class_labels,
                                                   G=G,
                                                   guidance_interval=guidance_interval,
+                                                  verbose=verbose,
+                                                  **sampler_kwargs)
+    return denoised_latents
+
+def denoise_latents_compress(cond_net: Any,
+                    uncond_net: Any,
+                    seeds: List[int],
+                    G: float,
+                    sampler_kwargs: dict,
+                    class_label: Optional[int] = None,
+                    guidance_list: Optional[List[int]] = None,
+                    compress_rate: Optional[List[int]] = None,
+                    batch_size: int = 64,
+                    device: torch.device = torch.device('cuda'),
+                    verbose: bool = False) -> torch.Tensor:
+    """Denoise latents with EDM sampler."""
+    assert cond_net.label_dim
+    label_dim = cond_net.label_dim
+    num_latents = len(seeds)
+
+    if class_label:
+        # Use hashed seeds for qualitative visualizations.
+        seeds = [hash((class_label, seed)) % (1 << 31) for seed in seeds]
+
+    # Denoise latents.
+    denoised_latents = torch.zeros([num_latents,
+                                    cond_net.img_channels,
+                                    cond_net.img_resolution,
+                                    cond_net.img_resolution],
+                                   device=device,
+                                   dtype=torch.float32)
+
+    for begin in range(0, num_latents, batch_size):
+        end = min(begin + batch_size, num_latents)
+
+        # Sample latents.
+        rng = StackedRandomGenerator(device=device,
+                                     seeds=seeds[begin:end])
+        latents = rng.randn(size=[end - begin,
+                                  cond_net.img_channels,
+                                  cond_net.img_resolution,
+                                  cond_net.img_resolution], device=device)
+
+        if class_label:
+            # Use fixed class labels.
+            labels_np = (class_label * np.ones(end - begin)).astype(np.int32)
+            class_labels = torch.eye(label_dim, device=device)[labels_np]
+        else:
+            # Sample class labels.
+            class_labels = torch.eye(label_dim, device=device)[rng.randint(label_dim, size=[end - begin], device=device)]
+
+        denoised_latents[begin:end] = edm_sampler_compress(cond_net=cond_net,
+                                                  latents=latents,
+                                                  uncond_net=uncond_net,
+                                                  class_labels=class_labels,
+                                                  G=G,
+                                                  guidance_list=guidance_list,
+                                                  compression_rate=compress_rate,
                                                   verbose=verbose,
                                                   **sampler_kwargs)
     return denoised_latents
