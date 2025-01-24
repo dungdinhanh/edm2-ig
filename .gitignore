@@ -1,7 +1,6 @@
 # Local.
 *.png
 *.slurm
-*.sh
 **/*.txt
 **/*.pdf
 **/*.pkl
