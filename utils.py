@@ -48,7 +48,7 @@ def load_hf_vae(name: str = 'stabilityai/sd-vae-ft-mse',
 
 def load_networks(cond_pkl: str,
                   uncond_pkl: str,
-                  device: torch.device = torch.device('cuda')) -> Any:
+                  device: torch.device = torch.device('cuda'), cache_dir=None) -> Any:
     """Loads all networks required to generate images."""
     # Load conditional network.
     print(f'Loading cond. network from: "{cond_pkl}"...')
@@ -64,7 +64,7 @@ def load_networks(cond_pkl: str,
             uncond_net = pickle.load(f)['ema'].to(device)
 
     # Load decoder VAE.
-    vae = load_hf_vae(device=device)
+    vae = load_hf_vae(device=device, cache_dir=cache_dir)
 
     return cond_net, uncond_net, vae
 

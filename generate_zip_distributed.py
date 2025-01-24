@@ -47,6 +47,8 @@ def parse_arguments():
     parser.add_argument('--seed', default=0, type=int, help='Random seed for generating images to zip.')
     parser.add_argument("--base_folder", type=str, default="./")
     parser.add_argument("--fix_seed", action="store_true")
+    parser.add_argument("--raw_images", action="store_true")
+    parser.add_argument("--save-num", default=20000, type=int, help="number of images to save checkpoints")
     return parser.parse_args()
 
 def main(local_rank) -> None:
@@ -189,6 +191,7 @@ def main(local_rank) -> None:
         print(f"Starting rank={rank}, seed={seed}, world_size={dist.get_world_size()}.")
     else:
         print(f"Starting rank={rank}, random seed, world_size={dist.get_world_size()}.")
+        seeds = np.random.randint(0, total, (samples_needed_this_gpu,))
 
     
 
@@ -209,13 +212,15 @@ def main(local_rank) -> None:
     # Load networks.
     cond_pkl_path = os.path.join(base_folder, cond_pkl)
     uncond_pkl_path = os.path.join(base_folder, uncond_pkl)
+    hub_path = os.path.join(base_folder, "hub")
     cond_net, uncond_net, vae = load_networks(cond_pkl=cond_pkl_path,
                                               uncond_pkl=uncond_pkl_path,
-                                              device=device)
+                                              device=device, cache_dir=hub_path)
 
     # Generate images to zip.
-    print(f'Generating {total_samples} images and saving them to "{reference_dir}..."')
-    img_idx = 0
+    if rank == 0:
+        print(f'Generating {total_samples} images and saving them to "{reference_dir}..."')
+    current_samples = 0
     # with zipfile.ZipFile(zip_path, 'w') as f:
     for begin in range(0, samples_needed_this_gpu, batch_size):
         end = min(begin + batch_size, samples_needed_this_gpu)
@@ -254,8 +259,39 @@ def main(local_rank) -> None:
         if verbose:
             elapsed_time = time.time() - total_start
             imgs_per_second = (end - begin) / elapsed_time
-            print(f'{img_idx}/{num_images} images generated ({imgs_per_second:0.2f} imgs/s)')
+            print(f'{total}/{num_images} images generated ({imgs_per_second:0.2f} imgs/s)')
             print(f'Batch timing: denoising = {den_time:0.1f}s, decoding = {dec_time:0.1f}s, saving = {saving_time:0.1f}s\n')
+
+        dist.barrier()
+        if current_samples >= args.save_num or total >= total_samples:
+            if rank == 0:
+                if not args.raw_images:
+                    all_images = compress_images_to_npz(sample_folder_dir, all_images)
+                    # all_images = compress_images_to_npz(sample_folder_dir, all_images)
+                    current_samples = 0
+            pass
+    # Make sure all processes have finished saving their samples before attempting to convert to .npz
+    dist.barrier()
+    if rank == 0:
+        if not args.raw_images:
+            # create_npz_from_sample_folder(args.sample_dir, args.num_fid_samples)
+            print(f"Complete sampling {total} satisfying >= {num_images}")
+            # create_npz_from_sample_folder(os.path.join(base_folder, args.sample_dir), args.num_fid_samples, args.image_size)
+            arr = np.stack(all_images)
+            arr = arr[: num_images]
+            shape_str = "x".join([str(x) for x in arr.shape])
+            reference_dir = os.path.join(output_folder_path, "reference")
+            os.makedirs(reference_dir, exist_ok=True)
+            out_path = os.path.join(reference_dir, f"samples_{shape_str}.npz")
+            # logger.log(f"saving to {out_path}")
+            print(f"Saving to {out_path}")
+            np.savez(out_path, arr)
+            os.remove(checkpoint)
+        print("Done.")
+        # print("Done.")
+    dist.barrier()
+    dist.destroy_process_group()
+        
 
     # All good.
     print('Done.')
