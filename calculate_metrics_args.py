@@ -5,7 +5,7 @@ import os
 import torch
 
 from dataset import get_dataloader, get_dataloader_npz
-from metrics.embeddings import load_feature_network
+from metrics.embeddings import load_feature_network, load_feature_network_cache
 from metrics.frechet_inception_distance import compute_fid
 from utils import count_images_in_zip, \
                   load_reference_statistics, \
@@ -24,6 +24,7 @@ def main():
                         help='Metric name. One of: fid, fd_dinov2.')
     parser.add_argument('--batch_size', default=128, type=int,
                         help='Batch size for computing features.')
+    parser.add_argument('--base_folder', default="./", type=str, help="Default folder")
 
     args = parser.parse_args()
 
@@ -36,6 +37,7 @@ def main():
     results_dir = args.results_dir
     metric = args.metric
     batch_size = args.batch_size
+    base_folder = args.base_folder
 
     # Ensure valid metric
     assert metric in ['fid', 'fd_dinov2'], f'Invalid metric name: {metric}.'
@@ -48,8 +50,9 @@ def main():
     mu_ref, sigma_ref = load_reference_statistics(ref_path=ref_path, metric=metric)
 
     # Load feature network.
+    hub_folder = os.path.join(base_folder, "hub")
     print('Loading feature network...')
-    feature_net = load_feature_network(name=feature_net_name).to(device)
+    feature_net = load_feature_network_cache(name=feature_net_name, hub_folder=hub_folder).to(device)
 
     # Get dataloader for generated images.
     print('Initializing dataloader...')
