@@ -79,7 +79,7 @@ def main():
                      sigma_ref=sigma_ref)
     print(f'{metric_name} = {fd:0.2f}')
     write_jsonl(path=os.path.join(results_dir, f'{metric}.jsonl'),
-                data={'gen_zip': os.path.basename(gen_zip).split('.zip')[0],
+                data={'gen_zip': gen_zip.split('.zip')[0],
                       metric: fd,
                       'num_gen_images': 50000})
     

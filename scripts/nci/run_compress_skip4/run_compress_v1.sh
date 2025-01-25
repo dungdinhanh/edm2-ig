@@ -12,7 +12,7 @@
 #PBS -l wd
 #PBS -l storage=scratch/jp09+scratch/li96
 #PBS -M adin6536@uni.sydney.edu.au
-#PBS -o output_nci/compress_guidance_edm2_k1.txt
+#PBS -o output_nci/compress_guidance_edm2_skip4_scale1.2.txt
 #PBS -e errors/compt_cond_quad_error1.txt
 
 module load use.own
@@ -20,10 +20,11 @@ module load python3/3.9.2
 module load gint
 
 
-skips=("5")
-scales=("2.0")
+skips=("4")
+scales=("1.2")
 ks=("1.0")
 base_folder="/scratch/li96/dd9648/"
+
 
 for scale in "${scales[@]}"
 do
@@ -56,7 +57,6 @@ echo ${cmd}
 done
 done
 done
-
 
 
 # for scale in "${scales[@]}"
