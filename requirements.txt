@@ -1,5 +1,5 @@
 numpy==1.23.0
-pillow==8.3.1
+pillow==11.1.0
 tqdm
 pyspng
 diffusers==0.24.0

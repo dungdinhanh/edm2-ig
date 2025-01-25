@@ -12,7 +12,7 @@
 #PBS -l wd
 #PBS -l storage=scratch/jp09+scratch/li96
 #PBS -M adin6536@uni.sydney.edu.au
-#PBS -o output_nci/compress_guidance_edm2.txt
+#PBS -o output_nci/compress_guidance_edm2_v2.txt
 #PBS -e errors/compt_cond_quad_error1.txt
 
 module load use.own
@@ -20,7 +20,7 @@ module load python3/3.9.2
 module load gint
 
 
-skips=("5")
+skips=("6")
 scales=("2.0")
 ks=("2.0")
 base_folder="/scratch/li96/dd9648/"
@@ -33,12 +33,13 @@ for k in "${ks[@]}"
 do
 cmd="WORLD_SIZE=1 RANK=0 MASTER_IP=127.0.0.1 MASTER_PORT=29510 MARSV2_WHOLE_LIFE_STATE=0 python generate_compress_dist.py \
  --cond_pkl models/edm2-xxl-phema-00939524-0.015.pkl --uncond_pkl models/edm2-xs-phema-02147483-0.015.pkl \
- --zip_dir IntG/compress_s${scale}_skip${skip}_k${k} --k ${k} --skip ${skip} --guidance_interval '[17, 22]' --guidance_scale ${scale} --save-num 2000 --fix_seed --base_folder ${base_folder}"
+ --zip_dir IntG/compress_${skip} --skip ${skip} --guidance_interval '[17, 22]' --guidance_scale ${scale} --save-num 2000 --fix_seed --base_folder ${base_folder}"
 echo ${cmd}
 eval ${cmd}
 done
 done
 done
+
 
 # for scale in "${scales[@]}"
 # do

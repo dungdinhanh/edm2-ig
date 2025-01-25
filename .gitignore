@@ -18,3 +18,5 @@ reference/
 models/
 IntG/
 hub/
+output_nci/
+errors
