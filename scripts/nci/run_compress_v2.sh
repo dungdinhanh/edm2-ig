@@ -22,7 +22,7 @@ module load gint
 
 skips=("6")
 scales=("2.0")
-ks=("2.0")
+ks=("3.0")
 base_folder="/scratch/li96/dd9648/"
 
 for scale in "${scales[@]}"
@@ -40,6 +40,23 @@ done
 done
 done
 
+
+for scale in "${scales[@]}"
+do
+for skip in "${skips[@]}"
+do
+for k in "${ks[@]}"
+do
+cmd="python calculate_metrics_args.py --gen_zip ${base_folder}/IntG/compress_s${scale}_skip${skip}_k${k}/reference/samples_50000x512x512x3.npz --ref_path ${base_folder}/reference/img512.pkl --metric fid"
+echo ${cmd}
+eval ${cmd}
+
+cmd="python calculate_metrics_args.py --gen_zip ${base_folder}/IntG/compress_s${scale}_skip${skip}_k${k}/reference/samples_50000x512x512x3.npz --ref_path ${base_folder}/reference/img512.pkl --metric fd_dinov2"
+echo ${cmd}
+eval ${cmd}
+done
+done
+done
 
 # for scale in "${scales[@]}"
 # do

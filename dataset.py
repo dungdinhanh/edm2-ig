@@ -232,7 +232,59 @@ class ImageFolderDataset(Dataset):
         labels = np.array(labels)
         labels = labels.astype({1: np.int64, 2: np.float32}[labels.ndim])
         return labels
+    
+class NPZImageDataset(torch.utils.data.Dataset):
+    def __init__(self, npz_file_path, transform=None, xflip=False):
+        """
+        Args:
+            npz_file_path (str): Path to the .npz file containing the dataset.
+            transform (callable, optional): Optional transform to be applied on a sample.
+            xflip (bool, optional): If True, doubles the dataset size with horizontally flipped images.
+        """
+        super().__init__()
+        self.npz_file_path = npz_file_path
+        self.transform = transform
+        self.xflip = xflip
 
+        # Load the entire dataset into memory
+        with np.load(self.npz_file_path) as npz_file:
+            keys = list(npz_file.keys())
+            self.images = npz_file[keys[0]].transpose(0, 3, 1, 2)  # Convert HWC to CHW
+
+            if len(keys) > 1:  # If there's a second matrix, it's assumed to be the labels
+                self.labels = npz_file[keys[1]]
+            else:
+                self.labels = np.zeros((self.images.shape[0]))
+        if self.labels is not None:
+            assert len(self.images) == len(self.labels) , \
+                "Mismatch between image and label counts."
+
+        self.original_length = len(self.images)
+        self.length = self.original_length * (2 if self.xflip else 1)  # Double size if xflip=True
+
+    def __len__(self):
+        return self.length
+
+    def __getitem__(self, idx):
+        # Check if this is a flipped image index
+        is_flipped = self.xflip and idx >= self.original_length
+        actual_idx = idx % self.original_length  # Get the actual index in the original dataset
+
+        # Retrieve the image
+        image = self.images[actual_idx]
+
+        # Retrieve the label if available
+        label = self.labels[actual_idx] if self.labels is not None else None
+
+        # Apply horizontal flip if needed
+        if is_flipped:
+            image = np.flip(image, axis=2)  # Flip along the width axis (CHW)
+
+        # Apply any additional transformations
+        if self.transform:
+            image = self.transform(image)
+
+        return image, label
 
 def get_dataloader(zip_path: str,
                    resolution: int,
@@ -259,3 +311,34 @@ def get_dataloader(zip_path: str,
                                        pin_memory=pin_memory,
                                        num_workers=num_workers,
                                        prefetch_factor=prefetch_factor)
+
+def get_dataloader_npz(npz_path: str,
+                   resolution: int,
+                   batch_size: int,
+                   num_images: int,
+                   xflip: bool = False,
+                   max_size: Optional[int] = None,
+                   pin_memory: bool = True,
+                   num_workers: int = 1,
+                   prefetch_factor: int = 2) -> torch.utils.data.DataLoader:
+    """Initializes a dataloader for .npz file."""
+    # Create an NPZ dataset object.
+    dataset = NPZImageDataset(npz_file_path=npz_path,
+                              transform=None,  # Transform can be added here if needed
+                              xflip=xflip)
+
+    # Apply max_size if provided
+    # if max_size is not None and max_size < len(dataset):
+    #     np.random.seed(0)  # Set random seed for reproducibility
+    #     indices = np.random.choice(len(dataset), max_size, replace=False)
+    #     dataset._raw_idx = indices  # Modify the indices to respect max_size
+
+    item_subset = [i % len(dataset) for i in range(num_images)]  # Ensure indices are within the dataset length
+
+    # Return a DataLoader for the NPZ dataset
+    return torch.utils.data.DataLoader(dataset=dataset,
+                      sampler=torch.utils.data.SubsetRandomSampler(item_subset),  # Use sampler for better shuffling
+                      batch_size=batch_size,
+                      pin_memory=pin_memory,
+                      num_workers=num_workers,
+                      prefetch_factor=prefetch_factor)
