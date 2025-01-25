@@ -6,6 +6,8 @@ import shutil
 import math
 import random
 from pathlib import Path
+from io import BytesIO
+import zipfile
 
 def get_png_files(sample_dir):
     list_files = []
@@ -17,6 +19,17 @@ def get_png_files(sample_dir):
             if num_image > max:
                 max = num_image
     return list_files, max+1
+
+def count_images_in_zip_with_max_idx(zip_path: str) -> int:
+    """Returns how many PNG files are in a zip."""
+    with zipfile.ZipFile(zip_path, 'r') as zf:
+        max = 0
+        png_files = [fname for fname in zf.namelist() if fname.endswith('.png')]
+        for file in png_files:
+            idx_image = int(file.split(".")[0])
+            if idx_image > max:
+                max = idx_image
+    return len(png_files), max + 1
 
 
 def create_npz_from_sample_folder(sample_dir, num=50_000, image_size=256, raw_images=False):
@@ -100,6 +113,56 @@ def compress_images_to_npz(sample_folder_dir, all_images=[], remove=True):
     np_all_images = np.stack(all_images)
     np.savez(npz_file, arr_0=np_all_images)
     return all_images
+
+def compress_images_to_zip(sample_folder_dir, f, remove=True):
+    list_png_files, _ = get_png_files(sample_folder_dir)
+    no_png_files = len(list_png_files)
+    if no_png_files <= 1:
+        return None
+    for i in range(no_png_files):
+        image_png_path = os.path.join(sample_folder_dir, f"{list_png_files[i]}")
+        try:
+            # image_png_path = os.path.join(images_dir, f"{list_png_files[i]}")
+            img = Image.open(image_png_path)
+            img.verify()
+        except(IOError, SyntaxError) as e:
+            print(f'Bad file {image_png_path}')
+            print(f'remove {image_png_path}')
+            try:
+                os.remove(image_png_path)
+            except FileNotFoundError:
+                pass
+            continue
+        sample_pil = Image.open(os.path.join(image_png_path))
+        image_file = BytesIO()
+        sample_pil.save(image_file, "PNG")
+        f.writestr(list_png_files[i], image_file.getvalue())
+        # sample_np = np.asarray(sample_pil).astype(np.uint8)
+        os.remove(image_png_path)
+  
+def read_from_zip(zip_path):
+    # Open the ZIP file
+    zip_file = os.path.join(zip_path, "last_samples.zip")
+    with zipfile.ZipFile(zip_file, 'r') as zip_file:
+        # List all image file names in the zip file (assuming .jpg, .jpeg, .png files)
+        image_filenames = [f for f in zip_file.namelist() if f.endswith(('.jpg', '.jpeg', '.png'))]
+        
+        # Preallocate an array for the images (initially an empty list)
+        images = []
+
+        # Loop over each image file
+        for filename in image_filenames:
+            with zip_file.open(filename) as f:
+                # Open the image with PIL
+                image = Image.open(f)
+                
+                # Convert the image to a NumPy array and append it to the list
+                images.append(np.array(image))
+
+        # Convert the list of images into a single NumPy array
+        images = np.array(images)
+
+    return images
 
 def compress_images_prompts_to_npz(sample_folder_dir, all_images=[], all_prompts=[]):
     image_folder = os.path.join(sample_folder_dir, "images")

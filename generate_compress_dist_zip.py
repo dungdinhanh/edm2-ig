@@ -12,7 +12,7 @@ import zipfile
 
 from sampling.sample_images import denoise_latents, \
                                    decode_latents, denoise_latents_compress
-from utils import load_networks
+from utils import load_networks, count_images_in_zip
 import torch.distributed as dist
 from torch_utils import dist_util
 from torch_utils.file_util import *
@@ -116,7 +116,7 @@ def main(local_rank) -> None:
     list_png_files, max_index = get_png_files(sample_folder_dir)
 
     final_file = os.path.join(reference_dir,
-                              f"samples_{num_images}x512x512x3.npz")
+                              f"samples_{num_images}x512x512x3.zip")
     if os.path.isfile(final_file):
         dist.barrier()
         print("Sampling complete")
@@ -124,35 +124,51 @@ def main(local_rank) -> None:
         dist.destroy_process_group()
         return
 
-    checkpoint = os.path.join(sample_folder_dir, "last_samples.npz")
+    checkpoint = os.path.join(sample_folder_dir, "last_samples.zip")
 
     # load all single image into checkpoint by rank 0 then reload to all processes
+    # if rank == 0:
+    #     if os.path.isfile(checkpoint):
+    #         all_images = list(np.load(checkpoint)['arr_0'])
+    #     else:
+    #         all_images = []
+    #     all_images = compress_images_to_npz(sample_folder_dir, all_images)
+
+    # if os.path.isfile(checkpoint):
+    #     all_images = list(np.load(checkpoint)['arr_0'])
+    # else:
+    #     all_images = []
+    # count number of images in last_samples.zip
     if rank == 0:
-        if os.path.isfile(checkpoint):
-            all_images = list(np.load(checkpoint)['arr_0'])
+        if os.path.isfile:
+            with zipfile.ZipFile(checkpoint, 'a') as f:
+                compress_images_to_zip(sample_folder_dir, f) #todo
         else:
-            all_images = []
-        all_images = compress_images_to_npz(sample_folder_dir, all_images)
+            f =  zipfile.ZipFile(checkpoint, "w")
+            f.close()
+                
+            pass
+    dist.barrier()
+    no_png_files, max_index = count_images_in_zip_with_max_idx(checkpoint)
 
-    if os.path.isfile(checkpoint):
-        all_images = list(np.load(checkpoint)['arr_0'])
-    else:
-        all_images = []
-
-    no_png_files = len(all_images)
+    # no_png_files = len(all_images)
     if no_png_files >= num_images:
         if rank == 0:
             print(f"Complete sampling {no_png_files} satisfying >= {num_images}")
+
+            all_images = read_from_zip(sample_folder_dir)
             # create_npz_from_sample_folder(os.path.join(base_folder, args.sample_dir), args.num_fid_samples, args.image_size)
             arr = np.stack(all_images)
             arr = arr[: num_images]
             shape_str = "x".join([str(x) for x in arr.shape])
+            reference_dir = os.path.join(output_folder_path, "reference")
+            os.makedirs(reference_dir, exist_ok=True)
             out_path = os.path.join(reference_dir, f"samples_{shape_str}.npz")
             # logger.log(f"saving to {out_path}")
             print(f"Saving to {out_path}")
             np.savez(out_path, arr)
             os.remove(checkpoint)
-            print("Done.")
+            print("Done")
         dist.barrier()
         dist.destroy_process_group()
         return
@@ -171,7 +187,7 @@ def main(local_rank) -> None:
     iterations = int(samples_needed_this_gpu // n)
     pbar = range(iterations)
     pbar = tqdm(pbar) if rank == 0 else pbar
-    total = len(all_images)
+    total = no_png_files
 
     if args.fix_seed:
         import random
@@ -226,62 +242,65 @@ def main(local_rank) -> None:
     if rank == 0:
         print(f'Generating {total_samples} images and saving them to "{reference_dir}..."')
     current_samples = 0
-    # with zipfile.ZipFile(zip_path, 'w') as f:
-    for begin in range(0, samples_needed_this_gpu, batch_size):
-        end = min(begin + batch_size, samples_needed_this_gpu)
-        total_start = time.time()
-        with torch.no_grad():
-            den_start = time.time()
-            denoised_latents = denoise_latents_compress(cond_net=cond_net,
-                                                uncond_net=uncond_net,
-                                                seeds=seeds[begin:end],
-                                                G=guidance_scale,
-                                                batch_size=batch_size,
-                                                sampler_kwargs=sampler_kwargs,
-                                                guidance_list=guidance_steps,
-                                                compress_rate=compression_rate,
-                                                device=device)
-            den_time = time.time() - den_start
+    with zipfile.ZipFile(checkpoint, 'a') as f:
+        for begin in range(0, samples_needed_this_gpu, batch_size):
+            end = min(begin + batch_size, samples_needed_this_gpu)
+            total_start = time.time()
+            with torch.no_grad():
+                den_start = time.time()
+                denoised_latents = denoise_latents_compress(cond_net=cond_net,
+                                                    uncond_net=uncond_net,
+                                                    seeds=seeds[begin:end],
+                                                    G=guidance_scale,
+                                                    batch_size=batch_size,
+                                                    sampler_kwargs=sampler_kwargs,
+                                                    guidance_list=guidance_steps,
+                                                    compress_rate=compression_rate,
+                                                    device=device)
+                den_time = time.time() - den_start
 
-            dec_start = time.time()
-            images = decode_latents(denoised_latents=denoised_latents,
-                                    vae=vae,
-                                    batch_size=batch_size_decoder,
-                                    device=device)
-            dec_time = time.time() - dec_start
+                dec_start = time.time()
+                images = decode_latents(denoised_latents=denoised_latents,
+                                        vae=vae,
+                                        batch_size=batch_size_decoder,
+                                        device=device)
+                dec_time = time.time() - dec_start
 
-        saving_start = time.time()
-        for i, image in enumerate(images):
-            # zip_fname = f'{img_idx:06d}.png'
-            im = PIL.Image.fromarray(image.transpose(1, 2, 0))
-            index = i * dist.get_world_size() + rank + total
-            image_file = f"{sample_folder_dir}/{index:06d}.png"
-            im.save(image_file, 'PNG')
-            # f.writestr(zip_fname, image_file.getvalue())
-        total += global_batch_size
-        current_samples += global_batch_size
-        saving_time = time.time() - saving_start
-        dist.barrier()
-        if verbose:
-            elapsed_time = time.time() - total_start
-            imgs_per_second = (end - begin) / elapsed_time
-            print(f'{total}/{num_images} images generated ({imgs_per_second:0.2f} imgs/s)')
-            print(f'Batch timing: denoising = {den_time:0.1f}s, decoding = {dec_time:0.1f}s, saving = {saving_time:0.1f}s\n')
+            saving_start = time.time()
+            for i, image in enumerate(images):
+                # zip_fname = f'{img_idx:06d}.png'
+                im = PIL.Image.fromarray(image.transpose(1, 2, 0))
+                index = i * dist.get_world_size() + rank + max_index
+                image_file = f"{sample_folder_dir}/{index:06d}.png"
+                im.save(image_file, 'PNG')
+                # f.writestr(zip_fname, image_file.getvalue())
+            total += global_batch_size
+            max_index += global_batch_size
+            current_samples += global_batch_size
+            saving_time = time.time() - saving_start
+            dist.barrier()
+            if verbose:
+                elapsed_time = time.time() - total_start
+                imgs_per_second = (end - begin) / elapsed_time
+                print(f'{total}/{num_images} images generated ({imgs_per_second:0.2f} imgs/s)')
+                print(f'Batch timing: denoising = {den_time:0.1f}s, decoding = {dec_time:0.1f}s, saving = {saving_time:0.1f}s\n')
 
-        dist.barrier()
-        if current_samples >= args.save_num or total >= total_samples:
-            if rank == 0:
-                if not args.raw_images:
-                    all_images = compress_images_to_npz(sample_folder_dir, all_images)
-                    # all_images = compress_images_to_npz(sample_folder_dir, all_images)
-                    current_samples = 0
-            pass
+            dist.barrier()
+            if current_samples >= args.save_num or total >= total_samples:
+                if rank == 0:
+                    if not args.raw_images:
+                        compress_images_to_zip(sample_folder_dir, f=f)
+                        # all_images = compress_images_to_npz(sample_folder_dir, all_images)
+                        current_samples = 0
+                pass
     # Make sure all processes have finished saving their samples before attempting to convert to .npz
     dist.barrier()
     if rank == 0:
         if not args.raw_images:
             # create_npz_from_sample_folder(args.sample_dir, args.num_fid_samples)
             print(f"Complete sampling {total} satisfying >= {num_images}")
+
+            all_images = read_from_zip(sample_folder_dir)
             # create_npz_from_sample_folder(os.path.join(base_folder, args.sample_dir), args.num_fid_samples, args.image_size)
             arr = np.stack(all_images)
             arr = arr[: num_images]
@@ -300,7 +319,8 @@ def main(local_rank) -> None:
         
 
     # All good.
-    print('Done.')
+    if rank == 0:
+        print('Done.')
 
 
 def get_guidance_timesteps_with_weight(n=250, skip=5, k=2.0):
