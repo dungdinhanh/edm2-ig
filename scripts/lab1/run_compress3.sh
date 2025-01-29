@@ -4,7 +4,7 @@ export NCCL_P2P_DISABLE=1
 
 
 skips=("6")
-scales=("1.0" "1.1" "1.2")
+scales=( "1.1" "1.2")
 ks=("1.0")
 efilters=("10" )
 base_folder="/hdd/dungda/"

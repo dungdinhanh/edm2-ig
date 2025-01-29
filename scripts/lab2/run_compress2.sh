@@ -3,10 +3,11 @@
 export NCCL_P2P_DISABLE=1
 
 
-skips=("6")
-scales=("1.0" "1.1" "1.2")
+skips=("6" "7")
+scales=("1.0" )
 ks=("1.0")
-efilters=("10" )
+# efilters=( "17" )
+efilters=("18")
 base_folder="/hdd/dungda/"
 
 for scale in "${scales[@]}"
@@ -47,6 +48,12 @@ done
 done
 done
 
+
+# skips=("")
+# scales=("1.0" )
+# ks=("1.0")
+# efilters=( "17" )
+# base_folder="/hdd/dungda/"
 
 
 # for scale in "${scales[@]}"
