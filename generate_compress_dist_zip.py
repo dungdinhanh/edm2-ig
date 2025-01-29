@@ -48,7 +48,7 @@ def parse_arguments():
     parser.add_argument("--fix_seed", action="store_true")
     parser.add_argument("--raw_images", action="store_true")
     parser.add_argument("--save-num", default=20000, type=int, help="number of images to save checkpoints")
-    parser.add_argument("--skip", default=5, type=int, help="compress rate")
+    parser.add_argument("--skip", default=5.0, type=float, help="compress rate")
     parser.add_argument("--k", default=3.0, type=float, help="compress k")
     return parser.parse_args()
 
