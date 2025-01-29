@@ -12,17 +12,17 @@
 #PBS -l wd
 #PBS -l storage=scratch/jp09+scratch/li96
 #PBS -M adin6536@uni.sydney.edu.au
-#PBS -o output_nci/compress_guidance_edm2_cfg_s1.2.txt
-#PBS -e errors/edm2_skip6_cfg_s2.txt
+#PBS -o output_nci/compress_guidance_edm2_skip6_scale1.0_k3.txt
+#PBS -e errors/edm2_skip6_scale1.4_k3.txt
 
 module load use.own
 module load python3/3.9.2
 module load gint
 
 
-skips=("1")
-scales=("1.2")
-ks=("1.0")
+skips=("6")
+scales=("1.0")
+ks=("3.0")
 base_folder="/scratch/li96/dd9648/"
 
 
